@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 201908062030 - vpc_ipsec.yaml - This template creates an IPsec VPN connection for a VPC.
+
+#############################
+# Mappings                  #
+#############################
+
+Mappings:
+  mapNET:
+    aws000:
+      TunnelInsideCidr0: 169.254.172.0/30
+      TunnelInsideCidr1: 169.254.172.4/30
+    aws064:
+      TunnelInsideCidr0: 169.254.172.8/30
+      TunnelInsideCidr1: 169.254.172.12/30
+    aws128:
+      TunnelInsideCidr0: 169.254.172.16/30
+      TunnelInsideCidr1: 169.254.172.20/30
+    aws192:
+      TunnelInsideCidr0: 169.254.172.24/30
+      TunnelInsideCidr1: 169.254.172.28/30
+
+#############################
+# Parameters                #
+#############################
+
+Parameters:
+  NET:
+    Description: Existing VPC Network
+    Type: String
+    AllowedValues:
+      - aws000
+      - aws064
+      - aws128
+      - aws192
+    Default: aws000
+  BgpAsn:
+    Description: Customer Gateway ASN
+    Type: String
+    Default: 65000
+  VpnAsn:
+    Description: VPN Gateway ASN
+    Type: String
+    Default: 64512
+  IpAddress:
+    Description: Customer Gateway IP
+    Type: String
+    Default: 203.0.113.23
+  PreSharedKey:
+    Description: IPsec Pre-Shared Key
+    Type: String
+    Default: 4u98Tcoquhz0LrVI9J4fAQ6qthUz9Noa
+
+#############################
+# Metadata                  #
+#############################
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC & Subnet Allocation
+        Parameters:
+          - NET
+          - VpnAsn
+      - Label:
+          default: Customer Router
+        Parameters:
+          - BgpAsn
+          - IpAddress
+          - PreSharedKey
+    ParameterLabels:
+      NET:
+        default: Network CIDR
+      BgpAsn:
+        default: Customer side ASN
+      VpnAsn:
+        default: Amazon side ASN
+      IpAddress:
+        default: Customer router IP
+      PreSharedKey:
+        default: Pre-Shared Key
+
+#############################
+# Resources                 #
+#############################
+
+Resources:
+
+  ## Gateways ##
+
+  CustomerGateway:
+    Type: 'AWS::EC2::CustomerGateway'
+    Properties:
+      Type: ipsec.1
+      BgpAsn: !Ref BgpAsn
+      IpAddress: !Ref IpAddress
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - gw ${IpAddress}'
+  VPNGateway:
+    Type: 'AWS::EC2::VPNGateway'
+    Properties:
+      Type: ipsec.1
+      AmazonSideAsn: !Ref VpnAsn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - vpn gateway'
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !ImportValue
+        'Fn::Sub': '${NET}-vpc-id'
+      VpnGatewayId: !Ref VPNGateway
+    DependsOn:
+      - VPNGateway
+
+  ## VPN Connection ##
+
+  VPNConnection:
+    Type: 'AWS::EC2::VPNConnection'
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: false
+      VpnTunnelOptionsSpecifications:
+        - PreSharedKey: !Ref PreSharedKey
+          TunnelInsideCidr: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr0']
+        - PreSharedKey: !Ref PreSharedKey
+          TunnelInsideCidr: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr1']
+      CustomerGatewayId: !Ref CustomerGateway
+      VpnGatewayId: !Ref VPNGateway
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - vpn to ${IpAddress}'
+  VPNGatewayRouteProp:
+    Type: AWS::EC2::VPNGatewayRoutePropagation
+    Properties:
+      RouteTableIds:
+        - !ImportValue
+          'Fn::Sub': '${NET}-rtb-id-private0'
+        - !ImportValue
+          'Fn::Sub': '${NET}-rtb-id-private1'
+      VpnGatewayId: !Ref VPNGateway
+    DependsOn:
+      - VPNConnection
+
+#############################
+# Outputs                   #
+#############################
+
+Outputs:
+  TunnelInsideCidr0:
+    Description: 'subnet cidr :: vpn tunnel 1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr0']
+  TunnelInsideCidr1:
+    Description: 'subnet cidr :: vpn tunnel 1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr1']
+  CGWID:
+    Description: 'customer gateway id'
+    Value: !Ref CustomerGateway
+  VPNID:
+    Description: 'vpn connection id'
+    Value: !Ref VPNConnection
+  VGWID:
+    Description: 'vpn gateway id'
+    Value: !Ref VPNGateway
+    Export:
+      Name: !Sub '${NET}-vgw-id'

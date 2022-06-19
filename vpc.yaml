@@ -1,0 +1,482 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 202201031545 - vpc.yaml - This template creates a regular VPC, subnets, etc & S3 VPC endpoint.
+
+#############################
+# Mappings                  #
+#############################
+
+Mappings:
+  mapNET:
+    aws000:
+      CIDR: 10.0.0.0/18
+      SubnetPublic0: 10.0.0.0/21
+      SubnetPublic1: 10.0.8.0/21
+      SubnetPrivate0: 10.0.16.0/21
+      SubnetPrivate1: 10.0.24.0/21
+      SubnetData0: 10.0.32.0/21
+      SubnetData1: 10.0.40.0/21
+      SubnetNAT0: 10.0.48.0/28
+      SubnetNAT1: 10.0.48.16/28
+    aws064:
+      CIDR: 10.0.64.0/18
+      SubnetPublic0: 10.0.64.0/21
+      SubnetPublic1: 10.0.72.0/21
+      SubnetPrivate0: 10.0.80.0/21
+      SubnetPrivate1: 10.0.88.0/21
+      SubnetData0: 10.0.96.0/21
+      SubnetData1: 10.0.104.0/21
+      SubnetNAT0: 10.0.112.0/28
+      SubnetNAT1: 10.0.112.16/28
+    aws128:
+      CIDR: 10.0.128.0/18
+      SubnetPublic0: 10.0.128.0/21
+      SubnetPublic1: 10.0.136.0/21
+      SubnetPrivate0: 10.0.144.0/21
+      SubnetPrivate1: 10.0.152.0/21
+      SubnetData0: 10.0.160.0/21
+      SubnetData1: 10.0.168.0/21
+      SubnetNAT0: 10.0.176.0/28
+      SubnetNAT1: 10.0.176.16/28
+    aws192:
+      CIDR: 10.0.192.0/18
+      SubnetPublic0: 10.0.192.0/21
+      SubnetPublic1: 10.0.200.0/21
+      SubnetPrivate0: 10.0.208.0/21
+      SubnetPrivate1: 10.0.216.0/21
+      SubnetData0: 10.0.224.0/21
+      SubnetData1: 10.0.232.0/21
+      SubnetNAT0: 10.0.240.0/28
+      SubnetNAT1: 10.0.240.16/28
+
+#############################
+# Parameters                #
+#############################
+
+Parameters:
+  NET:
+    Description: 10.0.X.0/18 octet to use
+    Type: String
+    AllowedValues:
+      - aws000
+      - aws064
+      - aws128
+      - aws192
+    Default: aws000
+  AZa:
+    Description: Availability Zone for Alpha Subnets
+    Type: 'AWS::EC2::AvailabilityZone::Name'
+  AZb:
+    Description: Availability Zone for Bravo Subnets
+    Type: 'AWS::EC2::AvailabilityZone::Name'
+
+#############################
+# Metadata                  #
+#############################
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC & Subnet Allocation
+        Parameters:
+          - NET
+      - Label:
+          default: Availibility Zones
+        Parameters:
+          - AZa
+          - AZb
+    ParameterLabels:
+      AZa:
+        default: Alpha AZ for Subnets
+      AZb:
+        default: Bravo AZ for Subnets
+      NET:
+        default: Network CIDR
+
+#############################
+# Resources                 #
+#############################
+
+Resources:
+
+  ## VPC + Subnets ##
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'CIDR']
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET}'
+  SubnetPublic0:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'SubnetPublic0']
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AZa
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - public ${AZa}'
+    DependsOn:
+      - VPC
+  SubnetPublic1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'SubnetPublic1']
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AZb
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - public ${AZb}'
+    DependsOn:
+      - VPC
+  SubnetPrivate0:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'SubnetPrivate0']
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AZa
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - private ${AZa}'
+    DependsOn:
+      - VPC
+  SubnetPrivate1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'SubnetPrivate1']
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AZb
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - private ${AZb}'
+    DependsOn:
+      - VPC
+  SubnetData0:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'SubnetData0']
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AZa
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - data ${AZa}'
+    DependsOn:
+      - VPC
+  SubnetData1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap ['mapNET', !Ref NET, 'SubnetData1']
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AZb
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - data ${AZb}'
+    DependsOn:
+      - VPC
+
+  ## Gateways ##
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - vpc igw'
+    DependsOn:
+      - VPC
+  InternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+    DependsOn:
+      - VPC
+      - InternetGateway
+
+  ## Internet Gateway ##
+
+  rtbIGW:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Network
+          Value: public
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - default to igw'
+  routeIGWnet0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref rtbIGW
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn:
+      - InternetGatewayAttachment
+
+  ## Route Tables ##
+
+  rtbPublic0:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - public ${AZa}'
+  rtbPublic1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - public ${AZb}'
+
+  rtbPrivate0:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - private ${AZa}'
+  rtbPrivate1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - private ${AZb}'
+
+  rtbData0:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - data ${AZa}'
+  rtbData1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - data ${AZb}'
+
+  ## Public Routes ##
+
+  routePublic0net0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref rtbPublic0
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn:
+      - InternetGatewayAttachment
+  routePublic1net0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref rtbPublic1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn:
+      - InternetGatewayAttachment
+
+  ## Route Table Associations ##
+
+  rtbAssocPublic0:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetPublic0
+      RouteTableId: !Ref rtbPublic0
+  rtbAssocPublic1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetPublic1
+      RouteTableId: !Ref rtbPublic1
+  rtbAssocPrivate0:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetPrivate0
+      RouteTableId: !Ref rtbPrivate0
+  rtbAssocPrivate1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetPrivate1
+      RouteTableId: !Ref rtbPrivate1
+  rtbAssocData0:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetData0
+      RouteTableId: !Ref rtbData0
+  rtbAssocData1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetData1
+      RouteTableId: !Ref rtbData1
+
+  ## VPC Endpoints: S3 ##
+
+  VPCEndpointS3:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:*'
+            Resource:
+              - '*'
+      RouteTableIds:
+        - !Ref rtbPublic0
+        - !Ref rtbPublic1
+        - !Ref rtbPrivate0
+        - !Ref rtbPrivate1
+        - !Ref rtbData0
+        - !Ref rtbData1
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VPC
+    DependsOn:
+      - rtbPublic0
+      - rtbPublic1
+      - rtbPrivate0
+      - rtbPrivate1
+      - rtbData0
+      - rtbData1
+
+#############################
+# Outputs                   #
+#############################
+
+Outputs:
+  AZa:
+    Description: 'alpha az for subnets'
+    Value: !Ref AZa
+    Export:
+      Name: !Sub '${NET}-az0'
+  AZb:
+    Description: 'bravo az for subnets'
+    Value: !Ref AZb
+    Export:
+      Name: !Sub '${NET}-az1'
+  VPCCIDR:
+    Description: 'vpc cidr'
+    Value: !FindInMap ['mapNET', !Ref NET, 'CIDR']
+    Export:
+      Name: !Sub '${NET}-vpc-cidr'
+  VPCID:
+    Description: 'vpc id'
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${NET}-vpc-id'
+  SubnetPublic0CIDR:
+    Description: 'subnet cidr :: public0'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetPublic0']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-public0'
+  SubnetPublic0ID:
+    Description: 'subnet id :: public0'
+    Value: !Ref SubnetPublic0
+    Export:
+      Name: !Sub '${NET}-subnet-id-public0'
+  SubnetPublic1CIDR:
+    Description: 'subnet cidr :: public1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetPublic1']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-public1'
+  SubnetPublic1ID:
+    Description: 'subnet id :: public1'
+    Value: !Ref SubnetPublic1
+    Export:
+      Name: !Sub '${NET}-subnet-id-public1'
+  SubnetPrivate0CIDR:
+    Description: 'subnet cidr :: private0'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetPrivate0']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-private0'
+  SubnetPrivate0ID:
+    Description: 'subnet id :: private0'
+    Value: !Ref SubnetPrivate0
+    Export:
+      Name: !Sub '${NET}-subnet-id-private0'
+  SubnetPrivate1CIDR:
+    Description: 'subnet cidr :: private1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetPrivate1']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-private1'
+  SubnetPrivate1ID:
+    Description: 'subnet id :: private1'
+    Value: !Ref SubnetPrivate1
+    Export:
+      Name: !Sub '${NET}-subnet-id-private1'
+  SubnetData0CIDR:
+    Description: 'subnet cidr :: data0'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetData0']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-data0'
+  SubnetData0ID:
+    Description: 'subnet id :: data0'
+    Value: !Ref SubnetData0
+    Export:
+      Name: !Sub '${NET}-subnet-id-data0'
+  SubnetData1CIDR:
+    Description: 'subnet cidr :: data1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetData1']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-data1'
+  SubnetData1ID:
+    Description: 'subnet id :: data1'
+    Value: !Ref SubnetData1
+    Export:
+      Name: !Sub '${NET}-subnet-id-data1'
+  SubnetNAT0CIDR:
+    Description: 'subnet cidr :: nat0'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetNAT0']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-nat0'
+  SubnetNAT1CIDR:
+    Description: 'subnet cidr :: nat1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'SubnetNAT1']
+    Export:
+      Name: !Sub '${NET}-subnet-cidr-nat1'
+  rtbPublic0ID:
+    Description: 'route table id :: public0'
+    Value: !Ref rtbPublic0
+    Export:
+      Name: !Sub '${NET}-rtb-id-public0'
+  rtbPublic1ID:
+    Description: 'route table id :: public1'
+    Value: !Ref rtbPublic1
+    Export:
+      Name: !Sub '${NET}-rtb-id-public1'
+  rtbPrivate0ID:
+    Description: 'route table id :: private0'
+    Value: !Ref rtbPrivate0
+    Export:
+      Name: !Sub '${NET}-rtb-id-private0'
+  rtbPrivate1ID:
+    Description: 'route table id :: private1'
+    Value: !Ref rtbPrivate1
+    Export:
+      Name: !Sub '${NET}-rtb-id-private1'
+  rtbData0ID:
+    Description: 'route table id :: data0'
+    Value: !Ref rtbData0
+    Export:
+      Name: !Sub '${NET}-rtb-id-data0'
+  rtbData1ID:
+    Description: 'route table id :: data1'
+    Value: !Ref rtbData1
+    Export:
+      Name: !Sub '${NET}-rtb-id-data1'
+  rtbIGWID:
+    Description: 'route table id :: igw'
+    Value: !Ref rtbIGW
+    Export:
+      Name: !Sub '${NET}-rtb-id-igw'
+  InternetGatewayID:
+    Description: 'internet gateway id'
+    Value: !Ref InternetGateway
+    Export:
+      Name: !Sub '${NET}-igw-id'

@@ -1,0 +1,343 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 201908062030 - vpc_tgw.yaml - This template creates or joins a Transit Gateway for a VPC.
+
+#############################
+# Mappings                  #
+#############################
+
+Mappings:
+  mapNET:
+    aws000:
+      TunnelInsideCidr0: 169.254.172.0/30
+      TunnelInsideCidr1: 169.254.172.4/30
+    aws064:
+      TunnelInsideCidr0: 169.254.172.8/30
+      TunnelInsideCidr1: 169.254.172.12/30
+    aws128:
+      TunnelInsideCidr0: 169.254.172.16/30
+      TunnelInsideCidr1: 169.254.172.20/30
+    aws192:
+      TunnelInsideCidr0: 169.254.172.24/30
+      TunnelInsideCidr1: 169.254.172.28/30
+
+#############################
+# Parameters                #
+#############################
+
+Parameters:
+  NET:
+    Description: Existing VPC Network
+    Type: String
+    AllowedValues:
+      - aws000
+      - aws064
+      - aws128
+      - aws192
+    Default: aws000
+  BgpAsn:
+    Description: Customer Gateway ASN
+    Type: String
+    Default: 65000
+  TgwAsn:
+    Description: Transit Gateway ASN
+    Type: String
+    Default: 64512
+  IpAddress:
+    Description: Customer Gateway IP
+    Type: String
+    Default: 203.0.113.23
+  PreSharedKey:
+    Description: IPsec Pre-Shared Key
+    Type: String
+    Default: 4u98Tcoquhz0LrVI9J4fAQ6qthUz9Noa
+  CreateTGW:
+    Description: False to join existing TGW
+    Default: 'True'
+    Type: String
+    AllowedValues:
+      - 'True'
+      - 'False'
+
+#############################
+# Metadata                  #
+#############################
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC & Subnet Allocation
+        Parameters:
+          - NET
+          - TgwAsn
+      - Label:
+          default: Customer Router
+        Parameters:
+          - CreateTGW
+          - BgpAsn
+          - IpAddress
+          - PreSharedKey
+    ParameterLabels:
+      NET:
+        default: Network CIDR
+      BgpAsn:
+        default: Customer side ASN
+      TgwAsn:
+        default: Amazon side ASN
+      IpAddress:
+        default: Customer router IP
+      PreSharedKey:
+        default: Pre-Shared Key
+      CreateTGW:
+        default: Create Transit Gateway
+
+#############################
+# Conditions                #
+#############################
+
+Conditions:
+  NewTGW: !Equals [ !Ref CreateTGW, 'True' ]
+  JoinTGW: !Equals [ !Ref CreateTGW, 'False' ]
+
+#############################
+# Resources                 #
+#############################
+
+Resources:
+
+  ## New Transit Gateway ##
+
+  CustomerGateway:
+    Type: 'AWS::EC2::CustomerGateway'
+    Condition: NewTGW
+    Properties:
+      Type: ipsec.1
+      BgpAsn: !Ref BgpAsn
+      IpAddress: !Ref IpAddress
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - gw ${IpAddress}'
+  TransitGateway:
+    Type: AWS::EC2::TransitGateway
+    Condition: NewTGW
+    Properties:
+      AmazonSideAsn: !Ref TgwAsn
+      AutoAcceptSharedAttachments: disable
+      DefaultRouteTableAssociation: enable
+      DefaultRouteTablePropagation: enable
+      Description: !Sub '${NET} - Transit Gateway'
+      DnsSupport: enable
+      VpnEcmpSupport: enable
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - Transit Gateway'
+  TransitGatewayAttachment:
+    Type: AWS::EC2::TransitGatewayAttachment
+    Condition: NewTGW
+    DependsOn: TransitGateway
+    Properties:
+      SubnetIds:
+      - !ImportValue
+        'Fn::Sub': '${NET}-subnet-id-private0'
+      - !ImportValue
+        'Fn::Sub': '${NET}-subnet-id-private1'
+      TransitGatewayId: !Ref TransitGateway
+      VpcId: !ImportValue
+        'Fn::Sub': '${NET}-vpc-id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${NET} - VPC Attachment'
+  VPNConnection:
+    Type: 'AWS::EC2::VPNConnection'
+    Condition: NewTGW
+    DependsOn:
+    - CustomerGateway
+    - TransitGateway
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: false
+      VpnTunnelOptionsSpecifications:
+        - PreSharedKey: !Ref PreSharedKey
+          TunnelInsideCidr: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr0']
+        - PreSharedKey: !Ref PreSharedKey
+          TunnelInsideCidr: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr1']
+      CustomerGatewayId: !Ref CustomerGateway
+      TransitGatewayId: !Ref TransitGateway
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} - ${NET} - vpn to ${IpAddress}'
+
+  ## Join Transit Gateway ##
+
+  TransitGatewayJoinAttachment:
+    Type: AWS::EC2::TransitGatewayAttachment
+    Condition: JoinTGW
+    Properties:
+      SubnetIds:
+      - !ImportValue
+        'Fn::Sub': '${NET}-subnet-id-private0'
+      - !ImportValue
+        'Fn::Sub': '${NET}-subnet-id-private1'
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      VpcId: !ImportValue
+        'Fn::Sub': '${NET}-vpc-id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${NET} - VPC Attachment'
+
+  ## TGW Route Table - using default ##
+  # Unable to GetAtt VPNConnection attachment ID
+
+  ## Private RFC1918 Routes to new TGW ##
+
+  newRoutePrivate0net10:
+    Type: AWS::EC2::Route
+    Condition: NewTGW
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 10.0.0.0/8
+      TransitGatewayId: !Ref TransitGateway
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+  newRoutePrivate0net172:
+    Type: AWS::EC2::Route
+    Condition: NewTGW
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 172.16.0.0/12
+      TransitGatewayId: !Ref TransitGateway
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+  newRoutePrivate0net192:
+    Type: AWS::EC2::Route
+    Condition: NewTGW
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 192.168.0.0/16
+      TransitGatewayId: !Ref TransitGateway
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+  newRoutePrivate1net10:
+    Type: AWS::EC2::Route
+    Condition: NewTGW
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 10.0.0.0/8
+      TransitGatewayId: !Ref TransitGateway
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+  newRoutePrivate1net172:
+    Type: AWS::EC2::Route
+    Condition: NewTGW
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 172.16.0.0/12
+      TransitGatewayId: !Ref TransitGateway
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+  newRoutePrivate1net192:
+    Type: AWS::EC2::Route
+    Condition: NewTGW
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 192.168.0.0/16
+      TransitGatewayId: !Ref TransitGateway
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+
+  ## Private RFC1918 Routes to join TGW ##
+
+  joinRoutePrivate0net10:
+    Type: AWS::EC2::Route
+    Condition: JoinTGW
+    DependsOn: TransitGatewayJoinAttachment
+    Properties:
+      DestinationCidrBlock: 10.0.0.0/8
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+  joinRoutePrivate0net172:
+    Type: AWS::EC2::Route
+    Condition: JoinTGW
+    DependsOn: TransitGatewayJoinAttachment
+    Properties:
+      DestinationCidrBlock: 172.16.0.0/12
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+  joinRoutePrivate0net192:
+    Type: AWS::EC2::Route
+    Condition: JoinTGW
+    DependsOn: TransitGatewayJoinAttachment
+    Properties:
+      DestinationCidrBlock: 192.168.0.0/16
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+  joinRoutePrivate1net10:
+    Type: AWS::EC2::Route
+    Condition: JoinTGW
+    DependsOn: TransitGatewayJoinAttachment
+    Properties:
+      DestinationCidrBlock: 10.0.0.0/8
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+  joinRoutePrivate1net172:
+    Type: AWS::EC2::Route
+    Condition: JoinTGW
+    DependsOn: TransitGatewayJoinAttachment
+    Properties:
+      DestinationCidrBlock: 172.16.0.0/12
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+  joinRoutePrivate1net192:
+    Type: AWS::EC2::Route
+    Condition: JoinTGW
+    DependsOn: TransitGatewayJoinAttachment
+    Properties:
+      DestinationCidrBlock: 192.168.0.0/16
+      TransitGatewayId: !ImportValue
+        'Fn::Sub': 'tgw-id'
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+
+#############################
+# Outputs                   #
+#############################
+
+Outputs:
+  CGWID:
+    Description: 'customer gateway id'
+    Value: !Ref CustomerGateway
+    Condition: NewTGW
+  TGWID:
+    Description: 'transit gateway id'
+    Value: !Ref TransitGateway
+    Condition: NewTGW
+    Export:
+      Name: !Sub 'tgw-id'
+  VPNID:
+    Description: 'vpn connection id'
+    Value: !Ref VPNConnection
+    Condition: NewTGW
+  TGWVPCID:
+    Description: 'vpn transit gateway attachment id'
+    Value: !If [NewTGW, !Ref TransitGatewayAttachment, !Ref TransitGatewayJoinAttachment]
+    Export:
+      Name: !Sub '${NET}-tgw-attach-vpc'
+  TunnelInsideCidr0:
+    Description: 'subnet cidr :: tgw tunnel 0'
+    Value: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr0']
+    Condition: NewTGW
+  TunnelInsideCidr1:
+    Description: 'subnet cidr :: tgw tunnel 1'
+    Value: !FindInMap ['mapNET', !Ref NET, 'TunnelInsideCidr1']
+    Condition: NewTGW

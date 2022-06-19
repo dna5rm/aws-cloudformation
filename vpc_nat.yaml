@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 202201031545 - vpc_nat.yaml - This template creates NAT gateways for a VPC.
+
+#############################
+# Parameters                #
+#############################
+
+Parameters:
+  NET:
+    Description: 10.0.X.0/18 octet to use
+    Type: String
+    AllowedValues:
+      - aws000
+      - aws064
+      - aws128
+      - aws192
+    Default: aws000
+
+#############################
+# Metadata                  #
+#############################
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC & Subnet Allocation
+        Parameters:
+          - NET
+    ParameterLabels:
+      NET:
+        default: Network CIDR
+
+#############################
+# Resources                 #
+#############################
+
+Resources:
+
+  ## Subnets ##
+
+  SubnetNAT0:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !ImportValue
+        'Fn::Sub': '${NET}-subnet-cidr-nat0'
+      VpcId: !ImportValue
+        'Fn::Sub': '${NET}-vpc-id'
+      AvailabilityZone: !ImportValue
+        'Fn::Sub': '${NET}-az0'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ' '
+            - - !Sub '${NET} - nat -'
+              - !ImportValue
+                'Fn::Sub': '${NET}-az0'
+  SubnetNAT1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !ImportValue
+        'Fn::Sub': '${NET}-subnet-cidr-nat1'
+      VpcId: !ImportValue
+        'Fn::Sub': '${NET}-vpc-id'
+      AvailabilityZone: !ImportValue
+        'Fn::Sub': '${NET}-az1'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ' '
+            - - !Sub '${NET} - nat -'
+              - !ImportValue
+                'Fn::Sub': '${NET}-az1'
+
+  ## NAT Gateways ##
+
+  eipNAT0:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+  natGW0:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt [eipNAT0, AllocationId]
+      SubnetId: !ImportValue
+        'Fn::Sub': '${NET}-subnet-id-private0'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ' '
+            - - !Sub '${NET} -'
+              - !ImportValue
+                  'Fn::Sub': '${NET}-az0'
+              - '- nat gateway'
+  eipNAT1:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+  natGW1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt [eipNAT1, AllocationId]
+      SubnetId: !ImportValue
+        'Fn::Sub': '${NET}-subnet-id-private1'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ' '
+            - - !Sub '${NET} -'
+              - !ImportValue
+                  'Fn::Sub': '${NET}-az1'
+              - '- nat gateway'
+
+  ## Route Table Associations ##
+
+  rtbAssocNAT0:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetNAT0
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-igw'
+  rtbAssocNAT1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetNAT1
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-igw'
+
+  ## Private Routes ##
+
+  routePrivate0net0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private0'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref natGW0
+    DependsOn:
+      - eipNAT0
+  routePrivate1net0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !ImportValue
+        'Fn::Sub': '${NET}-rtb-id-private1'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref natGW1
+    DependsOn:
+      - eipNAT1
+
+#############################
+# Outputs                   #
+#############################
+
+Outputs:
+  natGW0ID:
+    Description: 'nat gateway id :: az0'
+    Value: !Ref natGW0
+    Export:
+      Name: !Sub '${NET}-nat-id-az0'
+  natGW1ID:
+    Description: 'nat gateway id :: az1'
+    Value: !Ref natGW1
+    Export:
+      Name: !Sub '${NET}-nat-id-az1'
+  SubnetNAT0ID:
+    Description: 'subnet cidr :: igw0'
+    Value: !Ref SubnetNAT0
+    Export:
+      Name: !Sub '${NET}-subnet-id-nat0'
+  SubnetNAT1ID:
+    Description: 'subnet cidr :: igw1'
+    Value: !Ref SubnetNAT1
+    Export:
+      Name: !Sub '${NET}-subnet-id-nat1'

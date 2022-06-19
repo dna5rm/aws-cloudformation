@@ -1,1 +1,1 @@
-# cfn_vpc
+# cfn_vpc - AWS Cloudformation for VPC creation
